@@ -51,12 +51,46 @@ class MyPortfolio:
     NOTE: You can modify the initialization function
     """
 
-    def __init__(self, price, exclude, lookback=50, gamma=0):
+    def __init__(self, price, exclude, lookback=20, gamma=0):
         self.price = price
         self.returns = price.pct_change().fillna(0)
         self.exclude = exclude
         self.lookback = lookback
         self.gamma = gamma
+
+    def sma(self, index, asset, days=20):
+        if index < days:
+            return 0
+        else:
+            return self.price[asset].iloc[index-days:index].mean()
+    
+    def momentum(self, index, asset, days=20):
+        if index < days:
+            return 0
+        else:
+            return (self.price[asset].iloc[index-1] - self.price[asset].iloc[index-days]) / self.price[asset].iloc[index-days]
+    
+    def rsi(self, index, asset, days=14):
+        if index < days:
+            return 0
+        gain = 0
+        loss = 0
+        for i in range(index - days, index):
+            change = self.returns[asset].iloc[i]
+            if change > 0:
+                gain += change
+            else:
+                loss -= change
+        if loss == 0:
+            return 100
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def volatility(self, index, asset, days=20):
+        if index < days:
+            return 0
+        return self.returns[asset].iloc[index-days:index].std()
 
     def calculate_weights(self):
         # Get the assets by excluding the specified column
@@ -70,8 +104,44 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
-        
-        
+
+        x = []
+        y = []
+        n_samples = 1024
+        for i in range(n_samples):
+            idx = np.random.randint(self.lookback, len(self.price)-5)
+            asset = np.random.choice(assets)
+            x.append([
+                self.price[asset].iloc[idx-1],
+                self.sma(idx, asset),
+                self.momentum(idx, asset),
+                self.rsi(idx, asset),
+                self.volatility(idx, asset)
+            ])
+            y.append(self.returns[asset].iloc[idx:idx+5].sum())
+
+        from sklearn.ensemble import RandomForestRegressor
+        model = RandomForestRegressor(n_estimators=20, random_state=42)
+        model.fit(x, y)
+        for i in range(self.lookback, len(self.price)):
+            score = {}
+            for asset in assets:
+                features = [
+                    self.price[asset].iloc[i-1],
+                    self.sma(i, asset),
+                    self.momentum(i, asset),
+                    self.rsi(i, asset),
+                    self.volatility(i, asset)
+                ]
+                score[asset] = model.predict([features])[0]
+                score[asset] = max(score[asset], 0)
+                
+            for asset in assets:
+                if sum(score.values()) == 0:
+                    self.portfolio_weights[asset].iloc[i] = 1 / len(assets)
+                else:
+                    self.portfolio_weights[asset].iloc[i] = score[asset] / sum(score.values())
+
         """
         TODO: Complete Task 4 Above
         """
